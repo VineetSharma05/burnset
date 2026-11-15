@@ -52,7 +52,7 @@ username, email, password and a profile picture, and each user's data syncs to t
 4. **Authentication → Sign In / Providers → Email**: for a small private group you can turn
    **Confirm email** off (the built-in email sender is limited to a few emails per hour).
 5. **Authentication → URL Configuration**: set *Site URL* to where the app is hosted
-   (e.g. `https://your-site.netlify.app/app.html`) and add it under *Redirect URLs*.
+   (e.g. `https://burnset.vercel.app/app.html`) and add it under *Redirect URLs*.
 
 How it works: data is cached locally (instant + offline) and synced as one JSON document per user
 (`user_data` table). Row Level Security means users can only read/write their own row.
@@ -62,12 +62,12 @@ Note: free Supabase projects pause after ~7 days with no activity; unpause from 
 
 ## Deploy
 
-It's a static site, so deploy the folder as-is:
+**Live:** https://burnset.vercel.app (app: https://burnset.vercel.app/app.html)
 
-- **Vercel**: `npx vercel` (uses `vercel.json`)
-- **Netlify**: drag the folder into app.netlify.com/drop, or `npx netlify deploy --prod` (uses `netlify.toml`)
-- **GitHub Pages**: push to a repo and enable Pages for the root folder
-- **Cloudflare Pages**: no build command, output directory `/`
+Hosted on **Vercel** (free Hobby plan), connected to this GitHub repo: every push to `main`
+deploys automatically. No build step; `vercel.json` sets the service-worker cache headers.
+
+It's a plain static site, so any static host works (Cloudflare Pages: no build command, output `/`).
 
 When you ship changes, bump `VERSION` in `sw.js` so installed apps pick up the update.
 
