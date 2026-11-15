@@ -8,6 +8,6 @@
  * Leave both empty to run BurnSet in local-only mode (no accounts, data stays on the device).
  */
 window.BURNSET_CONFIG = window.BURNSET_CONFIG || {
-  supabaseUrl: '',      // e.g. 'https://abcdefghijkl.supabase.co'
-  supabaseAnonKey: '',  // e.g. 'eyJhbGciOi...' or 'sb_publishable_...'
+  supabaseUrl: 'https://irskdhkcxbpadbuxxgyn.supabase.co',
+  supabaseAnonKey: 'sb_publishable_Km7PEf4VM2AvCDcpHUwfcw_QBMGxmRn',
 };
