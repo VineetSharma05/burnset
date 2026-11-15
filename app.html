@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>BurnSet</title>
+  <meta name="description" content="Log your workouts and see exactly how many calories every set burns." />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BurnSet" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="./">
+        <img src="icons/icon.svg" alt="" class="brand-logo" />
+        <span>Burn<b>Set</b></span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">1 kg of fat ≈ 7,700 kcal<br /><a href="./">About BurnSet</a></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar" id="topbar"></header>
+      <div class="view" id="view"></div>
+    </main>
+
+    <nav class="tabbar" id="tabbar"></nav>
+  </div>
+
+  <div class="rest-pill hidden" id="restPill"></div>
+  <div class="modal-root" id="modalRoot"></div>
+  <div class="toast-root" id="toastRoot"></div>
+
+  <script src="js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/calc.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !/[?&]demo\b/.test(location.search)) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
