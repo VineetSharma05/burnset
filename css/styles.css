@@ -626,3 +626,42 @@ button.list-item svg.i { color: var(--tint); }
 .month + .day-head { margin-top: 4px; }
 .hist-foot { display: grid; grid-template-columns: 44px 1fr 1fr 1fr; gap: 8px; }
 .hist-foot .btn { padding: 0 8px; font-size: 15px; }
+
+/* ============ SET ROWS (grid) + SWIPE TO DELETE ============ */
+.sets { display: block; margin-top: 6px; }
+.sets-head, .set-row { display: grid; grid-template-columns: var(--cols); align-items: center; column-gap: 4px; }
+.sets-head { padding: 4px 2px 4px; }
+.sets-head > span { font-size: 11.5px; font-weight: 600; color: var(--text-2); text-align: center; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; }
+.sets-head svg.i { width: 13px; height: 13px; vertical-align: -2px; stroke-width: 2.4; }
+.set-swipe { position: relative; margin-top: 3px; border-radius: 10px; overflow: hidden; transition: height .22s ease, margin .22s ease, opacity .22s; }
+.set-swipe.removing { margin-top: 0; opacity: 0; }
+.set-del { position: absolute; inset: 0; width: 100%; background: var(--bad); color: #fff; display: flex; align-items: center; justify-content: flex-end; padding-right: 27px; border-radius: 10px; }
+.set-del span { font-size: 30px; font-weight: 300; line-height: 1; transition: transform .15s; }
+.set-swipe.arm .set-del span { transform: scale(1.3); }
+.set-row { position: relative; min-height: 44px; padding: 0 2px; background: var(--card); border-radius: 10px; touch-action: pan-y; transition: transform .25s cubic-bezier(.2,.9,.25,1), background .25s; will-change: transform; }
+.set-row.dragging { transition: none; }
+.set-row > span { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.set-row.done { background: linear-gradient(var(--done), var(--done)), var(--card); }
+.set-row .prev { display: block; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-row.done .cell-in { background: transparent; }
+.set-row.done .check { background: var(--green); color: #fff; animation: pop .3s ease; }
+.set-row .cell-in { max-width: none; }
+.set-info { grid-column: 1 / -1; font-size: 12px; color: var(--text-2); padding: 0 8px 8px 38px; margin-top: -4px; text-align: left; }
+.col-toggle { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 700; color: var(--tint); padding: 2px 4px; border-radius: 6px; background: color-mix(in srgb, var(--tint) 12%, transparent); white-space: nowrap; }
+.col-toggle svg.i { width: 11px; height: 11px; stroke-width: 2.6; }
+.lab-info { margin-top: 14px; font-size: 14px; color: var(--text-2); text-align: center; font-weight: 500; }
+
+/* ============ SUPERSETS ============ */
+.ex-card.ss { position: relative; box-shadow: inset 4px 0 0 var(--ss); padding-left: 16px; }
+.ss-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ss); background: color-mix(in srgb, var(--ss) 16%, transparent); padding: 3px 9px; border-radius: 999px; margin: 0 0 10px 2px; }
+.ss-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ss); }
+.ex-card.ss + .ex-card.ss { margin-top: -6px; }
+
+/* ============ NO ZOOM ON INPUT (iOS zooms below 16px) ============ */
+@media (pointer: coarse) {
+  input, select, textarea, .cell-in, .cell-sel, .ex-note { font-size: 16px !important; }
+}
+
+.set-del { opacity: 0; transition: opacity .12s; }
+.set-swipe.swiping .set-del { opacity: 1; }
+.col-toggle { font-size: 10.5px; padding: 2px 5px; text-decoration: underline dotted; text-underline-offset: 2px; }

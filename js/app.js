@@ -57,7 +57,7 @@
     history: [],
     custom: [],
     routines: null,
-    lab: { exId: 'bench-press-barbell', w: 60, r: 10, d: 30, i: 1 },
+    lab: { exId: 'bench-press-barbell', w: 60, r: 10, d: 30, i: 1, km: 2.5, g: 0 },
     plan: { kg: 5, diet: 400, perWeek: 4, perWorkout: null },
     onboarded: false,
   });
@@ -150,8 +150,25 @@
   const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const EFFORT = ['Light', 'Moderate', 'Hard'];
 
+  const KM_MI = 1.609344;
+  const DU = () => S.profile.dist || (S.profile.unit === 'lb' ? 'mi' : 'km');
+  const distDisp = (km) => (km == null ? null : DU() === 'mi' ? km / KM_MI : km);
+  const distFrom = (v) => (v == null ? null : DU() === 'mi' ? v * KM_MI : v);
+  const fmtPace = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+  const isDistCardio = (ex) => ex.t === 'c' && !!ex.cm;
+  const useElev = (ex, eo) => (eo && eo.elev != null ? eo.elev : !ex.tm);
+  const pickSet = (x) => ({ w: x.w, r: x.r, d: x.d, i: x.i, km: x.km, g: x.g, el: x.el, pw: x.pw, type: x.type });
+
   function fmtSet(ex, s) {
     if (!s) return '—';
+    if (isDistCardio(ex)) {
+      const parts = [`${fmtNum(s.d) || 0} min`];
+      if (ex.cm === 'row') { if (s.km) parts.push(`${Math.round(s.km * 1000)} m`); }
+      else if (s.km) parts.push(`${fmtNum(distDisp(s.km), 2)} ${DU()}`);
+      if (ex.cm === 'walk' || ex.cm === 'run') { if (s.g != null) parts.push(`${fmtNum(s.g)}%`); else if (s.el != null) parts.push(`${fmtNum(s.el, 0)} m↑`); }
+      if (ex.cm === 'bike' && s.pw) parts.push(`${fmtNum(s.pw, 0)} W`);
+      return parts.join(' · ');
+    }
     if (ex.t === 'c') return `${fmtNum(s.d) || 0} min · ${EFFORT[s.i ?? 1]}`;
     if (ex.t === 'h') return `${s.w ? fmtW(s.w) + U() + ' · ' : ''}${fmtNum(s.d) || 0}s`;
     if (ex.t === 'bw') return s.w ? `+${fmtW(s.w)}${U()} × ${s.r ?? 0}` : `${s.r ?? 0} reps`;
@@ -173,7 +190,21 @@
     const f = ex.b >= 0.3 ? 0.8 : ex.k >= 4.5 ? 0.5 : ex.r <= 0.12 ? 0.6 : 0.15;
     return Math.max(2.5, Math.round((bw * f) / 2.5) * 2.5);
   }
+  function cardioInfo(ex, x) {
+    if (!isDistCardio(ex)) return '';
+    const r = Calc.cardioModel(ex, x, S.profile);
+    if (!r) return ex.cm === 'bike' ? 'Enter time + distance (or watts)' : `Enter time + ${ex.cm === 'row' ? 'metres' : 'distance'} for calories`;
+    const i = r.info;
+    if (ex.cm === 'row') return `${fmtPace(i.split)} /500m · ${Math.round(i.watts)} W`;
+    if (ex.cm === 'bike') return i.watts ? `${Math.round(i.watts)} W` : `${fmtNum(distDisp(i.kmh))} ${DU()}/h`;
+    const sp = `${fmtNum(distDisp(i.kmh))} ${DU()}/h`;
+    return i.src === 'elevation' ? `${sp} · avg incline ${fmtNum(i.grade)}% (elevation ÷ distance)` : `${sp} · ${fmtNum(i.grade)}% incline`;
+  }
   function estimateLabel(ex) {
+    if (isDistCardio(ex)) {
+      const x = { d: 30, km: ex.dv * 0.5, g: ex.dg };
+      return { k: kcalOf(ex, x), u: ex.cm === 'row' ? `30 min · ${fmtPace(1800 / (x.km * 2))}/500m` : `30 min · ${fmtNum(distDisp(ex.dv))} ${DU()}/h${ex.dg ? ` · ${ex.dg}%` : ''}` };
+    }
     if (ex.t === 'c') return { k: kcalOf(ex, { d: 30, i: 1 }), u: '30 min' };
     if (ex.t === 'h') return { k: kcalOf(ex, { d: 60 }), u: '60 sec' };
     const w = refWeight(ex);
@@ -191,14 +222,23 @@
   }
 
   function effSet(s, p) {
+    const own = s.g != null || s.el != null;
     return {
       w: s.w ?? p?.w ?? 0,
       r: s.r ?? p?.r ?? 0,
       d: s.d ?? p?.d ?? 0,
       i: s.i ?? p?.i ?? 1,
+      km: s.km ?? p?.km ?? null,
+      g: own ? s.g ?? null : p?.g ?? null,
+      el: own ? s.el ?? null : p?.el ?? null,
+      pw: s.pw ?? p?.pw ?? null,
     };
   }
   function hasValue(ex, s) {
+    if (isDistCardio(ex)) {
+      if (!((s.d ?? 0) > 0)) return false;
+      return ex.cm === 'bike' ? (s.km ?? 0) > 0 || (s.pw ?? 0) > 0 : (s.km ?? 0) > 0;
+    }
     if (ex.t === 'c' || ex.t === 'h') return (s.d ?? 0) > 0;
     return (s.r ?? 0) > 0;
   }
@@ -508,12 +548,12 @@
 
   /* ================= WORKOUT: ACTIVE ================= */
   function newSet(from = {}) {
-    return { id: uid(), w: from.w ?? null, r: from.r ?? null, d: from.d ?? null, i: from.i ?? null, type: from.type || 'n', done: false };
+    return { id: uid(), w: from.w ?? null, r: from.r ?? null, d: from.d ?? null, i: from.i ?? null, km: from.km ?? null, g: from.g ?? null, el: from.el ?? null, pw: from.pw ?? null, type: from.type || 'n', done: false };
   }
   function startWorkout({ name = 'Workout', items = [], mode = 'workout', routineId = null } = {}) {
     S.active = {
       id: uid(), name, start: Date.now(), mode, routineId,
-      exercises: items.map((it) => ({ uid: uid(), exId: it.exId, note: it.note || '', sets: (it.sets.length ? it.sets : [{}]).map((s) => newSet(s)) })),
+      exercises: items.map((it) => ({ uid: uid(), exId: it.exId, note: it.note || '', ss: it.ss || null, elev: it.elev ?? null, sets: (it.sets.length ? it.sets : [{}]).map((s) => newSet(s)) })),
     };
     save();
     if (location.hash !== '#workout') location.hash = 'workout'; else render();
@@ -538,7 +578,7 @@
       <div class="live" id="live">${liveHtml(t, routine)}</div>
       <input class="wk-name" data-wkname value="${esc(w.name)}" placeholder="${routine ? 'Routine name' : 'Workout name'}" maxlength="60" />
       <div class="dim" style="font-size:13px;margin-bottom:14px">${routine ? 'Set target weights and reps. Calories are estimated live.' : `Started ${fmtTime(w.start)} · Bodyweight ${fmtW(S.profile.weight)} ${U()}`}</div>
-      <div id="exList">${w.exercises.map((eo) => exCard(eo, pm.get(eo.exId), routine)).join('')}</div>
+      <div id="exList">${(() => { const si = ssIndex(w.exercises); return w.exercises.map((eo) => exCard(eo, pm.get(eo.exId), routine, si)).join(''); })()}</div>
       ${w.exercises.length ? '' : `<div class="card empty"><div class="empty-ic">${icon('dumbbell')}</div><h3>Let's get to work</h3><p>Add an exercise and every set you log will show the calories it burned.</p></div>`}
       <div class="wk-actions">
         <button class="btn primary lg block" data-act="add-ex">${icon('plus')} Add Exercise</button>
@@ -546,6 +586,30 @@
       </div>`;
     const mount = () => $$('.ex-note').forEach((t) => { if (t.value) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; } });
     return { top, html, mount };
+  }
+  const SS_COLORS = ['#bf5af2', '#64d2ff', '#ffd60a', '#ff375f', '#5e5ce6', '#30d158'];
+  function ssIndex(list) { const m = new Map(); list.forEach((e) => { if (e.ss && !m.has(e.ss)) m.set(e.ss, m.size); }); return m; }
+  function normalizeSS(list) {
+    const c = {}; list.forEach((e) => { if (e.ss) c[e.ss] = (c[e.ss] || 0) + 1; });
+    list.forEach((e) => { if (e.ss && c[e.ss] < 2) e.ss = null; });
+  }
+  function pickSuperset(eo) {
+    const others = S.active.exercises.filter((x) => x !== eo && (!eo.ss || x.ss !== eo.ss));
+    menuSheet('Superset with', others.map((x) => ({
+      label: getEx(x.exId).n, icon: 'plus',
+      fn: () => {
+        const list = S.active.exercises;
+        const g = eo.ss || x.ss || uid();
+        if (x.ss && x.ss !== g) list.forEach((y) => { if (y.ss === x.ss) y.ss = g; });
+        eo.ss = g; x.ss = g;
+        const first = list.findIndex((y) => y.ss === g);
+        const members = list.filter((y) => y.ss === g);
+        const rest = list.filter((y) => y.ss !== g);
+        rest.splice(first, 0, ...members);
+        S.active.exercises = rest;
+        save(); render(true); toast('Superset created');
+      },
+    })));
   }
   function liveHtml(t, routine) {
     const k = routine ? t.kcal : t.kcal;
@@ -568,23 +632,31 @@
     if (routine) $('#live-t').textContent = S.active.exercises.length;
   }
 
-  function colHeads(ex) {
+  function colHeads(ex, eo) {
+    if (isDistCardio(ex)) {
+      if (ex.cm === 'row') return ['MIN', 'METRES'];
+      if (ex.cm === 'bike') return ['MIN', DU().toUpperCase(), 'WATTS'];
+      return ['MIN', DU().toUpperCase(), `<button class="col-toggle" data-act="toggle-elev" aria-label="Switch between incline percent and elevation gain">${useElev(ex, eo) ? 'ELEV m' : 'INCL%'}</button>`];
+    }
     if (ex.t === 'c') return ['MIN', 'EFFORT'];
     if (ex.t === 'h') return ['+' + U().toUpperCase(), 'SEC'];
     if (ex.t === 'bw') return ['+' + U().toUpperCase(), 'REPS'];
     if (ex.t === 'a') return ['-' + U().toUpperCase(), 'REPS'];
     return [U().toUpperCase(), 'REPS'];
   }
-  function exCard(eo, prev, routine) {
+  function exCard(eo, prev, routine, ssMap) {
     const ex = getEx(eo.exId);
-    const [c1, c2] = colHeads(ex);
+    const heads = colHeads(ex, eo);
+    const cols = `30px minmax(0,1.15fr) repeat(${heads.length}, minmax(0,1fr)) 44px${routine ? '' : ' 34px'}`;
+    const si = eo.ss && ssMap && ssMap.has(eo.ss) ? ssMap.get(eo.ss) : -1;
     let n = 0;
     const rows = eo.sets.map((s, i) => {
       if (s.type === 'n' || s.type === 'f') n++;
       return setRow(eo, ex, s, i, prev?.[i], s.type === 'w' ? 'W' : s.type === 'd' ? 'D' : String(n), routine);
     }).join('');
     const tot = exTotal(eo, routine);
-    return `<div class="ex-card" data-ex="${eo.uid}">
+    return `<div class="ex-card${si >= 0 ? ' ss' : ''}" data-ex="${eo.uid}"${si >= 0 ? ` style="--ss:${SS_COLORS[si % SS_COLORS.length]}"` : ''}>
+      ${si >= 0 ? `<div class="ss-tag">Superset ${String.fromCharCode(65 + (si % 26))}</div>` : ''}
       <div class="ex-head">
         ${avatar(ex)}
         <div class="ex-title"><div class="n">${esc(ex.n)}</div><div class="s">${esc(ex.m)} · ${esc(ex.e)}</div></div>
@@ -592,45 +664,60 @@
         <button class="icon-btn" data-act="ex-menu" aria-label="Exercise options">${icon('more')}</button>
       </div>
       <textarea class="ex-note" data-note rows="1" placeholder="Add notes here...">${esc(eo.note)}</textarea>
-      <table class="sets">
-        <thead><tr><th>Set</th><th>Previous</th><th>${c1}</th><th>${c2}</th><th>KCAL</th>${routine ? '' : `<th>${icon('check')}</th>`}</tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="sets" style="--cols:${cols}">
+        <div class="sets-head"><span>SET</span><span>PREVIOUS</span>${heads.map((h) => `<span>${h}</span>`).join('')}<span>KCAL</span>${routine ? '' : `<span>${icon('check')}</span>`}</div>
+        ${rows}
+      </div>
       <button class="add-set" data-act="add-set">${icon('plus')} Add Set</button>
       <div class="rep-explorer ${eo.explore ? '' : 'hidden'}" id="rx-${eo.uid}">${eo.explore ? explorerHtml(eo) : ''}</div>
     </div>`;
   }
   function setRow(eo, ex, s, i, p, label, routine) {
     const e = effSet(s, p);
-    const k = kcalOf(ex, routine || !s.done ? e : s);
+    const use = routine || !s.done ? e : s;
+    const ok = hasValue(ex, use);
+    const k = ok ? kcalOf(ex, use) : 0;
     const cls = { w: 'warm', d: 'drop', f: 'fail' }[s.type] || '';
-    const ph = (v) => (v == null ? '' : fmtNum(v));
-    let c1, c2;
-    if (ex.t === 'c') {
-      c1 = `<input class="cell-in" inputmode="decimal" data-f="d" value="${ph(s.d)}" placeholder="${ph(p?.d) || '0'}" aria-label="Minutes">`;
+    const ph = (v) => (v == null ? '' : fmtNum(v, 2));
+    const inp = (f, val, phv, lbl, mode = 'decimal') => `<input class="cell-in" inputmode="${mode}" data-f="${f}" value="${ph(val)}" placeholder="${ph(phv) || '0'}" aria-label="${lbl}">`;
+    let cells;
+    if (isDistCardio(ex)) {
+      cells = [inp('d', s.d, p?.d, 'Minutes')];
+      if (ex.cm === 'row') cells.push(inp('m', s.km != null ? Math.round(s.km * 1000) : null, p?.km != null ? Math.round(p.km * 1000) : null, 'Metres', 'numeric'));
+      else cells.push(inp('km', distDisp(s.km), distDisp(p?.km), 'Distance'));
+      if (ex.cm === 'bike') cells.push(inp('pw', s.pw, p?.pw, 'Average watts', 'numeric'));
+      if (ex.cm === 'walk' || ex.cm === 'run') cells.push(useElev(ex, eo) ? inp('el', s.el, p?.el, 'Elevation gain in metres', 'numeric') : inp('g', s.g, p?.g, 'Incline percent'));
+    } else if (ex.t === 'c') {
       const iv = s.i ?? p?.i ?? 1;
-      c2 = `<select class="cell-sel" data-f="i" aria-label="Effort">${EFFORT.map((x, j) => `<option value="${j}" ${j === iv ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+      cells = [inp('d', s.d, p?.d, 'Minutes'), `<select class="cell-sel" data-f="i" aria-label="Effort">${EFFORT.map((x, j) => `<option value="${j}" ${j === iv ? 'selected' : ''}>${x}</option>`).join('')}</select>`];
     } else if (ex.t === 'h') {
-      c1 = `<input class="cell-in" inputmode="decimal" data-f="w" value="${ph(toDisp(s.w))}" placeholder="${ph(toDisp(p?.w)) || '0'}" aria-label="Added weight">`;
-      c2 = `<input class="cell-in" inputmode="numeric" data-f="d" value="${ph(s.d)}" placeholder="${ph(p?.d) || '0'}" aria-label="Seconds">`;
+      cells = [inp('w', toDisp(s.w), toDisp(p?.w), 'Added weight'), inp('d', s.d, p?.d, 'Seconds', 'numeric')];
     } else {
-      c1 = `<input class="cell-in" inputmode="decimal" data-f="w" value="${ph(toDisp(s.w))}" placeholder="${ph(toDisp(p?.w)) || '0'}" aria-label="Weight">`;
-      c2 = `<input class="cell-in" inputmode="numeric" data-f="r" value="${ph(s.r)}" placeholder="${ph(p?.r) || '0'}" aria-label="Reps">`;
+      cells = [inp('w', toDisp(s.w), toDisp(p?.w), 'Weight'), inp('r', s.r, p?.r, 'Reps', 'numeric')];
     }
-    return `<tr class="set ${s.done && !routine ? 'done' : ''}" data-set="${s.id}">
-      <td><button class="set-no ${cls}" data-act="set-menu">${label}</button></td>
-      <td><span class="prev" data-act="fill-prev">${p ? esc(fmtSet(ex, p)) : '—'}</span></td>
-      <td>${c1}</td><td>${c2}</td>
-      <td><span class="kc ${s.done || routine ? '' : 'pending'}" id="kc-${s.id}">${fmtK(k)}</span></td>
-      ${routine ? '' : `<td><button class="check" data-act="toggle" aria-label="Complete set">${icon('check')}</button></td>`}
-    </tr>`;
+    return `<div class="set-swipe" data-set="${s.id}">
+      <button class="set-del" data-act="del-set" aria-label="Delete set" tabindex="-1"><span>−</span></button>
+      <div class="set-row ${s.done && !routine ? 'done' : ''}">
+        <span><button class="set-no ${cls}" data-act="set-menu">${label}</button></span>
+        <span class="prev" data-act="fill-prev">${p ? esc(fmtSet(ex, p)) : '—'}</span>
+        ${cells.map((c) => `<span>${c}</span>`).join('')}
+        <span class="kc ${s.done || routine ? '' : 'pending'}" id="kc-${s.id}">${ok ? fmtK(k) : '—'}</span>
+        ${routine ? '' : `<span><button class="check" data-act="toggle" aria-label="Complete set">${icon('check')}</button></span>`}
+        ${isDistCardio(ex) ? `<div class="set-info" id="si-${s.id}">${esc(cardioInfo(ex, use))}</div>` : ''}
+      </div>
+    </div>`;
   }
   function explorerHtml(eo) {
     const ex = getEx(eo.exId);
     const prev = prevMap().get(eo.exId);
     const last = [...eo.sets].reverse().map((s, i) => effSet(s, prev?.[eo.sets.length - 1 - i])).find((s) => s.w || s.r || s.d) || {};
     let title, cells;
-    if (ex.t === 'c') {
+    if (isDistCardio(ex)) {
+      const base = last.d && (last.km || last.pw) ? last : { d: 30, km: ex.dv * 0.5, g: ex.dg, el: null, pw: null };
+      const kpm = base.km ? base.km / base.d : 0;
+      title = `Minutes at ${cardioInfo(ex, base).split(' · (')[0]}`;
+      cells = [10, 15, 20, 30, 45, 60, 75, 90].map((d) => ({ l: d + ' min', k: kcalOf(ex, { d, km: kpm * d, g: base.g, el: base.el != null && base.km ? (base.el / base.km) * kpm * d : null, pw: base.pw }) }));
+    } else if (ex.t === 'c') {
       const it = last.i ?? 1;
       title = `Minutes at ${EFFORT[it].toLowerCase()} effort`;
       cells = [5, 10, 15, 20, 30, 45, 60, 90].map((d) => ({ l: d + ' min', k: kcalOf(ex, { d, i: it }) }));
@@ -653,8 +740,10 @@
     const prev = prevMap().get(eo.exId);
     const i = eo.sets.indexOf(s);
     const e = effSet(s, prev?.[i]);
+    const use = routine || !s.done ? e : s;
     const el = $('#kc-' + s.id);
-    if (el) el.textContent = fmtK(kcalOf(ex, routine || !s.done ? e : s));
+    if (el) el.textContent = hasValue(ex, use) ? fmtK(kcalOf(ex, use)) : '—';
+    const inf = $('#si-' + s.id); if (inf) inf.textContent = cardioInfo(ex, use);
     const t = $('#ext-' + eo.uid); if (t) t.textContent = fmtK(exTotal(eo, routine)) + ' kcal';
     if (eo.explore) { const rx = $('#rx-' + eo.uid); if (rx) rx.innerHTML = explorerHtml(eo); }
     updateLive();
@@ -664,7 +753,7 @@
     const w = S.active;
     if (w.mode === 'routine') {
       const name = (w.name || '').trim() || 'My Routine';
-      const r = { id: w.routineId || uid(), name, items: w.exercises.map((eo) => ({ exId: eo.exId, sets: eo.sets.map((s) => ({ w: s.w, r: s.r, d: s.d, i: s.i, type: s.type })) })) };
+      const r = { id: w.routineId || uid(), name, items: w.exercises.map((eo) => ({ exId: eo.exId, ss: eo.ss || null, elev: eo.elev ?? null, sets: eo.sets.map(pickSet) })) };
       const idx = S.routines.findIndex((x) => x.id === r.id);
       if (idx >= 0) S.routines[idx] = r; else S.routines.unshift(r);
       S.active = null; save(); render(); toast('Routine saved');
@@ -691,14 +780,14 @@
         const k = kcalOf(ex, s);
         kcal += k; sets++;
         if (ex.t === 'w' || ex.t === 'bw') vol += (s.w || 0) * (s.r || 0);
-        return { w: s.w, r: s.r, d: s.d, i: s.i, type: s.type, k };
+        return { ...pickSet(s), k };
       });
       if (ds.length && ex.t === 'w' && best.has(eo.exId)) {
         let top = -1, topV = best.get(eo.exId);
         ds.forEach((s, i) => { const v = Calc.e1rm(s.w || 0, s.r || 0); if (v > topV) { topV = v; top = i; } });
         if (top >= 0) { ds[top].pr = true; prs++; }
       }
-      return { exId: eo.exId, note: eo.note, sets: ds };
+      return { exId: eo.exId, note: eo.note, ss: eo.ss || null, sets: ds };
     }).filter((e) => e.sets.length);
 
     const entry = { id: uid(), name: (w.name || '').trim() || 'Workout', start: w.start, end, exercises, kcal, volume: vol, sets, prs, bw: S.profile.weight };
@@ -800,7 +889,7 @@
   async function saveAsRoutine(h) {
     const name = await promptDialog('Save as routine', h.name, 'Save', 'Routine name');
     if (!name) return;
-    S.routines.unshift({ id: uid(), name, items: h.exercises.map((e) => ({ exId: e.exId, sets: e.sets.map((s) => ({ w: s.w, r: s.r, d: s.d, i: s.i, type: s.type === 'f' ? 'n' : s.type })) })) });
+    S.routines.unshift({ id: uid(), name, items: h.exercises.map((e) => ({ exId: e.exId, ss: e.ss || null, sets: e.sets.map((s) => ({ ...pickSet(s), type: s.type === 'f' ? 'n' : s.type })) })) });
     save(); toast('Routine saved'); if (route() === 'workout') render(true);
   }
 
@@ -1036,7 +1125,7 @@
         const ex = getEx(e.exId);
         let n = 0;
         return `<div class="card" style="margin-top:12px;padding:14px">
-          <div class="row">${avatar(ex, 36)}<div class="grow"><div style="font-weight:600">${esc(ex.n)}</div>${e.note ? `<div class="dim" style="font-size:13px">${esc(e.note)}</div>` : ''}</div>
+          <div class="row">${avatar(ex, 36)}<div class="grow"><div style="font-weight:600">${esc(ex.n)}${e.ss ? ' <span class="tag">Superset</span>' : ''}</div>${e.note ? `<div class="dim" style="font-size:13px">${esc(e.note)}</div>` : ''}</div>
             <b class="fire mono">${fmtK(e.sets.reduce((a, s) => a + (s.k || 0), 0))} kcal</b></div>
           <div style="margin-top:8px">${e.sets.map((s) => {
             const lbl = s.type === 'w' ? 'W' : s.type === 'd' ? 'D' : String(++n);
@@ -1058,7 +1147,7 @@
     $('[data-hr]', m.el).onclick = async () => {
       m.close();
       if (!(await guardActive())) return;
-      startWorkout({ name: h.name, items: h.exercises.map((e) => ({ exId: e.exId, sets: e.sets.map((s) => ({ ...s, type: s.type === 'f' ? 'n' : s.type })) })) });
+      startWorkout({ name: h.name, items: h.exercises.map((e) => ({ exId: e.exId, ss: e.ss || null, sets: e.sets.map((s) => ({ ...s, type: s.type === 'f' ? 'n' : s.type })) })) });
     };
   }
 
@@ -1067,7 +1156,15 @@
     const L = S.lab;
     const ex = getEx(L.exId);
     let controls;
-    if (ex.t === 'c') {
+    if (isDistCardio(ex)) {
+      const isRow = ex.cm === 'row';
+      const dv = isRow ? Math.round((L.km || 0) * 1000) : +fmtNum(distDisp(L.km || 0), 1);
+      controls = `
+        ${sliderBlock('lab-d', 'Duration', L.d, 1, 120, 1, 'min')}
+        <div style="margin-top:18px">${isRow ? sliderBlock('lab-km', 'Distance', dv, 500, 20000, 100, 'm') : sliderBlock('lab-km', 'Distance', dv, 0.5, ex.cm === 'bike' ? 100 : 30, 0.1, DU())}</div>
+        ${ex.cm === 'walk' || ex.cm === 'run' ? `<div style="margin-top:18px">${sliderBlock('lab-g', 'Incline', L.g || 0, 0, 15, 0.5, '%')}</div>` : ''}
+        <div class="lab-info" id="lab-info"></div>`;
+    } else if (ex.t === 'c') {
       controls = `
         ${sliderBlock('lab-d', 'Duration', L.d, 1, 120, 1, 'min')}
         <div class="field" style="margin-top:16px"><label>Effort</label><div class="segmented" id="lab-i">${EFFORT.map((x, j) => `<button data-i="${j}" class="${L.i === j ? 'on' : ''}">${x}</button>`).join('')}</div></div>`;
@@ -1110,7 +1207,7 @@
     return `<div class="slider-val"><label style="font-weight:600;font-size:13px;color:var(--text-2)">${label}</label><div><span class="v mono" id="${id}-v">${v}</span> <span class="dim">${unit}</span></div></div>
       <input type="range" class="big-slider" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}" style="--p:${((v - min) / (max - min)) * 100}%">`;
   }
-  function labSet() { const L = S.lab; return { w: L.w, r: L.r, d: L.d, i: L.i }; }
+  function labSet() { const L = S.lab; return { w: L.w, r: L.r, d: L.d, i: L.i, km: L.km, g: L.g }; }
   function updateLab() {
     const ex = getEx(S.lab.exId);
     const set = labSet();
@@ -1147,6 +1244,24 @@
         [`Time under tension (${set.r} × ${S.profile.tempo}s)`, `${fmtK(b.active)} kcal`],
         [S.profile.includeRest ? `Rest after set (${S.profile.rest}s)` : 'Rest period (off in settings)', `${fmtK(b.rest)} kcal`],
       ];
+    } else if (isDistCardio(ex)) {
+      const i = b.info || {};
+      if (ex.cm === 'walk' || ex.cm === 'run') lines = [
+        ['Speed (distance ÷ time)', `${fmtNum(distDisp(i.kmh || 0))} ${DU()}/h <span class="dim">(${Math.round(((set.km || 0) * 1000) / (set.d || 1))} m/min)</span>`],
+        ['Grade', `${fmtNum(i.grade || 0)}%`],
+        [`ACSM ${i.eq || 'walking'} equation`, `${fmtNum(i.vo2 || 0)} ml O₂/kg/min`],
+        ['Oxygen → energy (≈5 kcal per litre)', `${fmtK(b.active)} kcal`],
+      ];
+      else if (ex.cm === 'row') lines = [
+        ['Pace', `${fmtPace(i.split || 0)} /500m`],
+        ['Power (2.8 ÷ pace³)', `${Math.round(i.watts || 0)} W`],
+        ['Energy (~20% muscle efficiency)', `${fmtK(b.active)} kcal`],
+      ];
+      else lines = [
+        ['Speed', `${fmtNum(distDisp(i.kmh || 0))} ${DU()}/h`],
+        ['MET (Compendium)', `${i.met ?? '—'}`],
+        ['MET × kg × hours', `${fmtK(b.active)} kcal`],
+      ];
     } else {
       const met = ex.t === 'c' ? ex.k[set.i] : ex.k;
       lines = [
@@ -1158,13 +1273,20 @@
       if (b.rest) lines.push([`Rest after (${S.profile.rest}s)`, `${fmtK(b.rest)} kcal`]);
     }
     lines.push(['Fat equivalent (÷ 7,700 × 1000)', `<b class="fire">${fmtG(k)} g</b>`]);
+    const li = $('#lab-info'); if (li) li.textContent = cardioInfo(ex, set);
     $('#lab-math').innerHTML = `<div class="section-title">The math</div><div class="math-box">${lines.map(([a, v]) => `<div class="math-line"><span>${a}</span><b class="mono">${v}</b></div>`).join('')}</div>`;
     const ch = $('[data-chart="lab"]'); if (ch) chartFns.lab(ch);
   }
   chartFns.lab = (el) => {
     const ex = getEx(S.lab.exId), L = S.lab;
     let data, hi = -1, every = 1, title;
-    if (ex.t === 'c') {
+    if (isDistCardio(ex)) {
+      title = 'Calories by minutes at this pace';
+      const ds = [5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90, 120];
+      const kpm = (L.km || 0) / (L.d || 1);
+      data = ds.map((d) => ({ l: d + 'm', v: kcalOf(ex, { d, km: kpm * d, g: L.g }) }));
+      hi = ds.indexOf(L.d);
+    } else if (ex.t === 'c') {
       title = `Calories by minutes (${EFFORT[L.i].toLowerCase()})`;
       const ds = [5, 10, 15, 20, 25, 30, 40, 45, 60, 75, 90, 120];
       data = ds.map((d) => ({ l: d + 'm', v: kcalOf(ex, { d, i: L.i }) }));
@@ -1188,6 +1310,8 @@
     const setP = (el) => el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min)) * 100 + '%');
     bind('lab-r', (e) => { L.r = +e.target.value; setP(e.target); $('#lab-r-v').textContent = L.r; updateLab(); saveSoon(); });
     bind('lab-d', (e) => { L.d = +e.target.value; setP(e.target); $('#lab-d-v').textContent = L.d; updateLab(); saveSoon(); });
+    bind('lab-km', (e) => { const v = +e.target.value; const ex = getEx(L.exId); L.km = ex.cm === 'row' ? v / 1000 : distFrom(v); setP(e.target); $('#lab-km-v').textContent = v; updateLab(); saveSoon(); });
+    bind('lab-g', (e) => { L.g = +e.target.value; setP(e.target); $('#lab-g-v').textContent = L.g; updateLab(); saveSoon(); });
     bind('lab-ws', (e) => { L.w = fromDisp(+e.target.value); setP(e.target); $('#lab-w').value = e.target.value; updateLab(); saveSoon(); });
     bind('lab-w', (e) => { const v = num(e.target.value); L.w = fromDisp(v ?? 0); const s = $('#lab-ws'); if (s) { s.value = v ?? 0; setP(s); } updateLab(); saveSoon(); });
     bind('lab-bw', (e) => { const v = num(e.target.value); if (v && v > 20) { S.profile.weight = fromDisp(v); updateLab(); updatePlanner(); saveSoon(); } });
@@ -1368,6 +1492,7 @@
           <div class="s-row"><div><div class="t">Weekly burn goal</div><div class="d">Fills the orange ring</div></div><div class="ctl"><select class="select" id="pf-gk">${[1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000].map((v) => `<option value="${v}" ${P.weeklyKcal === v ? 'selected' : ''}>${v.toLocaleString()} kcal</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Weekly workouts goal</div><div class="d">Fills the green ring</div></div><div class="ctl"><select class="select" id="pf-gw">${[2, 3, 4, 5, 6, 7].map((v) => `<option value="${v}" ${P.weeklyWorkouts === v ? 'selected' : ''}>${v} workouts</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Units</div></div><div class="ctl"><div class="segmented" id="pf-unit"><button data-v="kg" class="${P.unit === 'kg' ? 'on' : ''}">kg</button><button data-v="lb" class="${P.unit === 'lb' ? 'on' : ''}">lb</button></div></div></div>
+          <div class="s-row"><div><div class="t">Distance</div><div class="d">For walking, running and cycling</div></div><div class="ctl"><div class="segmented" id="pf-dist"><button data-v="km" class="${DU() === 'km' ? 'on' : ''}">km</button><button data-v="mi" class="${DU() === 'mi' ? 'on' : ''}">mi</button></div></div></div>
           <div class="s-row"><div><div class="t">Rep tempo</div><div class="d">Seconds per rep (up + down)</div></div><div class="ctl"><select class="select" id="pf-tempo">${[2, 3, 4, 5, 6].map((v) => `<option value="${v}" ${P.tempo === v ? 'selected' : ''}>${v} sec</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Rest timer</div><div class="d">Starts when you tick a set</div></div><div class="ctl"><select class="select" id="pf-rest">${[0, 30, 45, 60, 90, 120, 150, 180, 240, 300].map((v) => `<option value="${v}" ${P.rest === v ? 'selected' : ''}>${v ? (v >= 60 ? `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')} min` : v + ' sec') : 'Off'}</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Count rest-period burn</div><div class="d">Your heart rate stays up between sets</div></div><label class="switch"><input type="checkbox" id="pf-incr" ${P.includeRest ? 'checked' : ''}><span></span></label></div>
@@ -1419,6 +1544,7 @@
     const seg = (id, key, after) => $('#' + id).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; P[key] = b.dataset.v; save(); after ? after() : render(true); });
     seg('pf-unit', 'unit');
     seg('pf-mode', 'mode');
+    seg('pf-dist', 'dist');
     seg('pf-theme', 'theme', () => { applyTheme(); render(true); });
     $('#pf-gk').addEventListener('change', (e) => { P.weeklyKcal = +e.target.value; save(); });
     $('#pf-gw').addEventListener('change', (e) => { P.weeklyWorkouts = +e.target.value; save(); });
@@ -1528,7 +1654,7 @@
       }
       case 'add-set': {
         const last = eo.sets[eo.sets.length - 1];
-        eo.sets.push(newSet(last ? { w: last.w, r: last.r, d: last.d, i: last.i } : {}));
+        eo.sets.push(newSet(last ? { ...pickSet(last), type: 'n' } : {}));
         save(); render(true);
         break;
       }
@@ -1542,9 +1668,23 @@
           if (set.r == null && e.r) set.r = e.r;
           if (set.d == null && e.d) set.d = e.d;
           if (set.i == null && ex.t === 'c') set.i = e.i;
-          if (!hasValue(ex, set)) { toast(ex.t === 'c' ? 'Enter minutes first' : ex.t === 'h' ? 'Enter seconds first' : 'Enter reps first'); break; }
+          if (set.km == null && e.km != null) set.km = e.km;
+          if (set.g == null && set.el == null) { if (e.g != null) set.g = e.g; else if (e.el != null) set.el = e.el; }
+          if (set.pw == null && e.pw != null) set.pw = e.pw;
+          if (!hasValue(ex, set)) {
+            toast(isDistCardio(ex) ? `Enter time and ${ex.cm === 'row' ? 'metres' : ex.cm === 'bike' ? 'distance or watts' : 'distance'} first` : ex.t === 'c' ? 'Enter minutes first' : ex.t === 'h' ? 'Enter seconds first' : 'Enter reps first');
+            break;
+          }
           set.done = true;
           navigator.vibrate?.(15);
+          // Superset: go to the next exercise in the round; rest only after the last one
+          const grp = eo.ss ? S.active.exercises.filter((x) => x.ss === eo.ss) : [];
+          const next = grp.length > 1 && grp.indexOf(eo) < grp.length - 1 ? grp[grp.indexOf(eo) + 1] : null;
+          if (next) {
+            save(); render(true);
+            setTimeout(() => $(`[data-ex="${next.uid}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 40);
+            break;
+          }
           startRest();
         } else set.done = false;
         save(); render(true);
@@ -1553,8 +1693,19 @@
       case 'fill-prev': {
         const prev = prevMap().get(eo.exId)?.[eo.sets.indexOf(set)];
         if (!prev) break;
-        Object.assign(set, { w: prev.w ?? null, r: prev.r ?? null, d: prev.d ?? null, i: prev.i ?? null });
+        Object.assign(set, { w: prev.w ?? null, r: prev.r ?? null, d: prev.d ?? null, i: prev.i ?? null, km: prev.km ?? null, g: prev.g ?? null, el: prev.el ?? null, pw: prev.pw ?? null });
         save(); render(true);
+        break;
+      }
+      case 'del-set':
+        deleteSetRow(a.closest('.set-swipe'));
+        break;
+      case 'toggle-elev': {
+        const ex = getEx(eo.exId);
+        eo.elev = !useElev(ex, eo);
+        eo.sets.forEach((x) => { if (!x.done) { x.g = null; x.el = null; } });
+        save(); render(true);
+        toast(eo.elev ? 'Enter elevation gain (m). Incline is worked out for you' : 'Enter the treadmill incline %');
         break;
       }
       case 'set-menu': {
@@ -1568,11 +1719,13 @@
       case 'ex-menu': {
         const i = S.active.exercises.indexOf(eo);
         menuSheet(getEx(eo.exId).n, [
-          { label: eo.explore ? 'Hide rep explorer' : 'Rep explorer', sub: 'See kcal for any number of reps', icon: 'flame', fn: () => { eo.explore = !eo.explore; save(); render(true); } },
+          { label: eo.explore ? 'Hide calorie explorer' : 'Calorie explorer', sub: 'See kcal for any reps or minutes', icon: 'flame', fn: () => { eo.explore = !eo.explore; save(); render(true); } },
+          ...(S.active.exercises.some((x) => x !== eo && (!eo.ss || x.ss !== eo.ss)) ? [{ label: eo.ss ? 'Add to superset' : 'Superset with…', sub: 'Back-to-back sets, rest after each round', icon: 'repeat', fn: () => pickSuperset(eo) }] : []),
+          ...(eo.ss ? [{ label: 'Remove from superset', icon: 'x', fn: () => { eo.ss = null; normalizeSS(S.active.exercises); save(); render(true); } }] : []),
           { label: 'Replace exercise', icon: 'repeat', fn: () => openPicker({ multi: false, title: 'Replace exercise', onPick: ([id]) => { eo.exId = id; save(); render(true); } }) },
           ...(i > 0 ? [{ label: 'Move up', icon: 'up', fn: () => { const a = S.active.exercises; [a[i - 1], a[i]] = [a[i], a[i - 1]]; save(); render(true); } }] : []),
           ...(i < S.active.exercises.length - 1 ? [{ label: 'Move down', icon: 'down', fn: () => { const a = S.active.exercises; [a[i + 1], a[i]] = [a[i], a[i + 1]]; save(); render(true); } }] : []),
-          { label: 'Remove exercise', icon: 'trash', danger: true, fn: () => { S.active.exercises = S.active.exercises.filter((x) => x !== eo); save(); render(true); } },
+          { label: 'Remove exercise', icon: 'trash', danger: true, fn: () => { S.active.exercises = S.active.exercises.filter((x) => x !== eo); normalizeSS(S.active.exercises); save(); render(true); } },
         ]);
         break;
       }
@@ -1580,7 +1733,7 @@
         openHistory(a.dataset.id);
         break;
       case 'lab-pick':
-        openPicker({ multi: false, title: 'Pick an exercise', onPick: ([id]) => { const ex = getEx(id); S.lab.exId = id; if (ex.t === 'c') { S.lab.d = 30; S.lab.i = 1; } else if (ex.t === 'h') { S.lab.d = 60; S.lab.w = 0; } else S.lab.w = refWeight(ex); save(); render(); } });
+        openPicker({ multi: false, title: 'Pick an exercise', onPick: ([id]) => { const ex = getEx(id); S.lab.exId = id; if (isDistCardio(ex)) { S.lab.d = 30; S.lab.km = ex.dv * 0.5; S.lab.g = ex.dg || 0; } else if (ex.t === 'c') { S.lab.d = 30; S.lab.i = 1; } else if (ex.t === 'h') { S.lab.d = 60; S.lab.w = 0; } else S.lab.w = refWeight(ex); save(); render(); } });
         break;
       case 'create-ex':
         openCustomForm();
@@ -1629,9 +1782,73 @@
     else if (f === 'r') set.r = v == null ? null : Math.round(v);
     else if (f === 'd') set.d = v;
     else if (f === 'i') set.i = v;
+    else if (f === 'km') set.km = distFrom(v);
+    else if (f === 'm') set.km = v == null ? null : v / 1000;
+    else if (f === 'g') { set.g = v; set.el = null; }
+    else if (f === 'el') { set.el = v; set.g = null; }
+    else if (f === 'pw') set.pw = v;
     patchSet(eo, set);
     saveSoon();
   });
+  // Swipe a set left to reveal delete; swipe all the way to delete it
+  const SWIPE_OPEN = 76;
+  let sw = null, suppressClick = false;
+  function closeRow(row) {
+    row.classList.remove('open'); row.style.transform = '';
+    const w = row.parentElement; if (!w) return;
+    w.classList.remove('arm');
+    setTimeout(() => { if (!row.classList.contains('open') && !row.classList.contains('dragging')) w.classList.remove('swiping'); }, 260);
+  }
+  function deleteSetRow(wrap) {
+    if (!wrap) return;
+    const card = wrap.closest('[data-ex]');
+    const eo = card && findEo(card.dataset.ex);
+    if (!eo) return;
+    const id = wrap.dataset.set;
+    const row = wrap.querySelector('.set-row');
+    navigator.vibrate?.(12);
+    wrap.style.height = wrap.offsetHeight + 'px';
+    row.style.transition = 'transform .2s ease';
+    row.style.transform = 'translateX(-105%)';
+    requestAnimationFrame(() => { wrap.classList.add('removing'); wrap.style.height = '0px'; });
+    setTimeout(() => { eo.sets = eo.sets.filter((x) => x.id !== id); save(); render(true); }, 230);
+  }
+  view.addEventListener('pointerdown', (e) => {
+    const row = e.target.closest('.set-row');
+    $$('.set-row.open', view).forEach((r) => { if (r !== row) closeRow(r); });
+    if (!row || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    sw = { row, pid: e.pointerId, x0: e.clientX, y0: e.clientY, base: row.classList.contains('open') ? -SWIPE_OPEN : 0, x: 0, active: false };
+  });
+  view.addEventListener('pointermove', (e) => {
+    if (!sw || e.pointerId !== sw.pid) return;
+    const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
+    if (!sw.active) {
+      if (Math.abs(dx) < 10) return;
+      if (Math.abs(dy) > Math.abs(dx) * 0.8) { sw = null; return; }
+      sw.active = true;
+      sw.row.classList.add('dragging');
+      sw.row.parentElement.classList.add('swiping');
+      try { sw.row.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      if (document.activeElement && sw.row.contains(document.activeElement)) document.activeElement.blur();
+    }
+    sw.x = Math.min(0, sw.base + dx);
+    sw.row.style.transform = `translateX(${sw.x}px)`;
+    sw.row.parentElement.classList.toggle('arm', -sw.x > sw.row.offsetWidth * 0.5);
+  });
+  function endSwipe(e) {
+    if (!sw || e.pointerId !== sw.pid) return;
+    const t = sw; sw = null;
+    if (!t.active) return;
+    t.row.classList.remove('dragging');
+    suppressClick = true; setTimeout(() => { suppressClick = false; }, 80);
+    if (-t.x > t.row.offsetWidth * 0.5) deleteSetRow(t.row.parentElement);
+    else if (-t.x > 36) { t.row.classList.add('open'); t.row.style.transform = `translateX(-${SWIPE_OPEN}px)`; t.row.parentElement.classList.remove('arm'); }
+    else closeRow(t.row);
+  }
+  view.addEventListener('pointerup', endSwipe);
+  view.addEventListener('pointercancel', endSwipe);
+  view.addEventListener('click', (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); } }, true);
+
   // Enter key jumps to next input, like a spreadsheet
   view.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || !e.target.matches('.cell-in')) return;

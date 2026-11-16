@@ -463,7 +463,18 @@
   C('Foam Rolling', 'Cardio', 'Other', [2.0, 2.0, 2.3]);
 
   const slug = (s) => s.toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  window.EXERCISES = L.map((x) => ({ id: slug(x.n), ...x }));
+  // Distance-based cardio: [model, default km/h, default incline %, treadmill (incline % input) ?]
+  const CARDIO_MODEL = {
+    'walking': ['walk', 5, 0, 0], 'incline-treadmill-walk': ['walk', 5, 10, 1], 'hiking': ['walk', 4, 8, 0],
+    'rucking-weighted-walk': ['walk', 5.5, 0, 0], 'jogging': ['run', 8, 0, 0], 'running-treadmill': ['run', 10, 0, 1],
+    'running-outdoor': ['run', 10, 0, 0], 'cycling-stationary': ['bike', 20, 0, 1], 'cycling-outdoor': ['bike', 20, 0, 0],
+    'rowing-machine': ['row', 13.3, 0, 1], 'ski-erg': ['row', 12, 0, 1],
+  };
+  window.EXERCISES = L.map((x) => {
+    const id = slug(x.n);
+    const m = CARDIO_MODEL[id];
+    return m ? { id, ...x, cm: m[0], dv: m[1], dg: m[2], tm: !!m[3] } : { id, ...x };
+  });
 
   window.MUSCLES = [
     'Chest', 'Back', 'Lats', 'Lower Back', 'Traps', 'Shoulders', 'Biceps', 'Triceps', 'Forearms',
