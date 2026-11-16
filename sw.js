@@ -1,5 +1,5 @@
 // Offline-first service worker. Bump VERSION whenever you deploy changes.
-const VERSION = 'burnset-v7';
+const VERSION = 'burnset-v8';
 const ASSETS = [
   './',
   './index.html',

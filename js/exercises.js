@@ -470,10 +470,67 @@
     'running-outdoor': ['run', 10, 0, 0], 'cycling-stationary': ['bike', 20, 0, 1], 'cycling-outdoor': ['bike', 20, 0, 0],
     'rowing-machine': ['row', 13.3, 0, 1], 'ski-erg': ['row', 12, 0, 1],
   };
+  /*
+   * How each exercise is logged (drives both the "How to log" hint and the maths):
+   *   lw = implements: you log the weight of ONE dumbbell; lw = 2 means a pair moves every rep.
+   *   sd = sides: 2 means reps are logged per arm / per leg and both sides get counted.
+   * Dumbbell exercises default to a pair (lw 2) unless listed in ONE_DB.
+   */
+  const ONE_DB = new Set([
+    'pullover-dumbbell', 'dumbbell-row-single-arm', 'kroc-row-dumbbell', 'concentration-curl-dumbbell',
+    'cross-body-hammer-curl-dumbbell', 'preacher-curl-dumbbell', 'triceps-kickback-dumbbell',
+    'overhead-triceps-extension-dumbbell', 'lean-away-lateral-raise-dumbbell', 'external-rotation-dumbbell',
+    'side-bend-dumbbell', 'single-leg-romanian-deadlift-dumbbell', 'leg-curl-dumbbell', 'hip-thrust-dumbbell',
+    'renegade-row-dumbbell', 'dumbbell-snatch', 'suitcase-carry', 'overhead-carry',
+  ]);
+  const PER_SIDE = new Set([
+    'dumbbell-row-single-arm', 'kroc-row-dumbbell', 'meadows-row-barbell', 'renegade-row-dumbbell', 'single-arm-cable-row',
+    'single-arm-lat-pulldown', 'concentration-curl-dumbbell', 'cross-body-hammer-curl-dumbbell', 'preacher-curl-dumbbell',
+    'bayesian-curl-cable', 'triceps-kickback-dumbbell', 'triceps-kickback-cable', 'single-arm-triceps-pushdown',
+    'lean-away-lateral-raise-dumbbell', 'lateral-raise-cable', 'external-rotation-cable', 'external-rotation-dumbbell',
+    'single-arm-landmine-press', 'kettlebell-press', 'side-bend-dumbbell', 'cable-woodchopper', 'pallof-press-cable',
+    'oblique-crunch', 'single-leg-press-machine', 'single-leg-extension-machine', 'bulgarian-split-squat-dumbbell',
+    'bulgarian-split-squat-barbell', 'bulgarian-split-squat-bodyweight', 'split-squat-dumbbell', 'lunge-dumbbell',
+    'lunge-barbell', 'lunge-bodyweight', 'walking-lunge-dumbbell', 'walking-lunge-bodyweight', 'reverse-lunge-dumbbell',
+    'reverse-lunge-barbell', 'lateral-lunge-dumbbell', 'curtsy-lunge-dumbbell', 'step-up-dumbbell', 'step-up-barbell',
+    'step-up-bodyweight', 'pistol-squat', 'cossack-squat', 'single-leg-romanian-deadlift-dumbbell',
+    'single-leg-romanian-deadlift-kettlebell', 'single-leg-hip-thrust', 'single-leg-glute-bridge', 'glute-kickback-cable',
+    'glute-kickback-machine', 'donkey-kick', 'fire-hydrant', 'clamshell-band', 'hip-abduction-cable', 'hip-adduction-cable',
+    'single-leg-calf-raise', 'kettlebell-snatch', 'dumbbell-snatch', 'kettlebell-clean', 'turkish-get-up-kettlebell',
+  ]);
+  const NOTES = {
+    '21s-bicep-curl-barbell': 'Enter 21 as the reps for each set (7 bottom-half + 7 top-half + 7 full reps). Calories already use the shorter average range of those partial reps.',
+    'negative-pull-up': 'Each slow lowering counts as 1 rep.',
+    'kipping-pull-up': 'Each pull to the bar counts as 1 rep.',
+    'wrist-roller': '1 rep = rolling the weight all the way up and back down.',
+    'tire-flip': '1 rep = 1 flip. Enter the tyre weight if you know it.',
+    'rope-climb': '1 rep = one climb to the top (about 4 m).',
+    'wall-ball': '1 rep = squat + throw to the target. Weight = the ball.',
+    'medicine-ball-slam': 'Weight = the ball. 1 rep = 1 slam.',
+    'burpee': '1 rep = one full burpee (down, chest to floor, up, jump).',
+    'burpee-pull-up': '1 rep = one burpee plus one pull-up.',
+    'russian-twist': 'Count every touch: left + right = 2 reps.',
+    'russian-twist-plate': 'Count every touch: left + right = 2 reps. Weight = the plate.',
+    'bicycle-crunch': 'Count every elbow-to-knee: left + right = 2 reps.',
+    'heel-taps': 'Count every tap: left + right = 2 reps.',
+    'kettlebell-swing': 'Weight = the kettlebell. 1 rep = 1 swing.',
+    'single-arm-kettlebell-swing': 'Total swings for the set (switch hands as you like).',
+    'leg-press-machine': 'Enter the plates loaded on the sled. Add the sled weight if your gym lists it.',
+    'single-leg-press-machine': 'Enter the plates loaded on the sled. Reps per leg.',
+    'bench-dip': 'Leave weight empty unless you put plates on your lap.',
+    'shrug-dumbbell': 'Weight of one dumbbell; one in each hand.',
+    'farmers-walk': 'Seconds walked. Weight of one dumbbell; we count both hands.',
+    'farmers-walk-trap-bar': 'Seconds walked. Weight = bar + plates.',
+    'turkish-get-up-kettlebell': '1 rep = all the way up and back down. Reps per side.',
+  };
   window.EXERCISES = L.map((x) => {
     const id = slug(x.n);
     const m = CARDIO_MODEL[id];
-    return m ? { id, ...x, cm: m[0], dv: m[1], dg: m[2], tm: !!m[3] } : { id, ...x };
+    const o = m ? { id, ...x, cm: m[0], dv: m[1], dg: m[2], tm: !!m[3] } : { id, ...x };
+    if (x.e === 'Dumbbell' && (x.t === 'w' || x.t === 'h') && !ONE_DB.has(id)) o.lw = 2;
+    if (PER_SIDE.has(id)) o.sd = 2;
+    if (NOTES[id]) o.note = NOTES[id];
+    return o;
   });
 
   window.MUSCLES = [

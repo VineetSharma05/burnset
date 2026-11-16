@@ -73,6 +73,7 @@
     S = { ...d, ...s, profile: { ...d.profile, ...(s.profile || {}) }, lab: { ...d.lab, ...(s.lab || {}) }, plan: { ...d.plan, ...(s.plan || {}) } };
     if (!Array.isArray(S.history)) S.history = [];
     if (!Array.isArray(S.custom)) S.custom = [];
+    if (!S.profile.weightAt) S.profile.weightAt = Date.now();
     if (!Array.isArray(S.routines)) S.routines = seedRoutines();
   }
   let saveErr = false;
@@ -453,6 +454,7 @@
         <div class="stat"><div class="v mono fire">${fmtK(avg)}</div><div class="l">Avg kcal</div></div>
       </div>
 
+      ${(() => { const days = Math.floor((Date.now() - (S.profile.weightAt || Date.now())) / 864e5); return S.history.length && days >= 14 ? `<button class="bw-nudge" data-act="update-bw">${icon('scale')}<div class="grow"><b>Still ${fmtW(S.profile.weight)} ${U()}?</b><div class="dim">Every calorie number uses your bodyweight. Last updated ${days} days ago.</div></div><span class="tint">Update</span></button>` : ''; })()}
       <div class="section">
         <div class="section-title">Quick start</div>
         <button class="btn primary lg block" data-act="start-empty">${icon('plus')} Start Empty Workout</button>
@@ -478,6 +480,103 @@
       mount: animateRings,
     };
   }
+  /* ---------- How to log each exercise ---------- */
+  function sideWord(ex) {
+    if (['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors', 'Abductors'].includes(ex.m)) return 'leg';
+    if (['Core', 'Obliques'].includes(ex.m)) return 'side';
+    return 'arm';
+  }
+  function weightWord(ex) {
+    if (ex.lw === 2) return 'Weight of 1 dumbbell';
+    return ({ Dumbbell: 'Dumbbell weight', Barbell: 'Bar + plates', 'EZ Bar': 'Bar + plates', 'Trap Bar': 'Bar + plates', 'Smith Machine': 'Plates loaded', Machine: 'Machine weight', Cable: 'Stack weight', Kettlebell: 'Kettlebell weight', Plate: 'Plate weight', Band: 'Band resistance' })[ex.e] || 'Weight used';
+  }
+  function logGuide(ex) {
+    const u = U(), sw = sideWord(ex), per = ex.sd === 2, pair = ex.lw === 2;
+    const lb = u === 'lb';
+    const n = (kg, lbv) => (lb ? lbv : kg);
+    let short, rows = [], example = '';
+    if (isDistCardio(ex)) {
+      if (ex.cm === 'row') {
+        short = 'Minutes · metres from the monitor';
+        rows = [['Time', 'Total minutes'], ['Distance', 'Metres shown on the monitor']];
+        example = '20 min, 4,500 m → enter 20 and 4500';
+      } else if (ex.cm === 'bike') {
+        short = 'Minutes · distance or average watts';
+        rows = [['Time', 'Total minutes'], ['Distance', `From the bike or your watch (${DU()})`], ['Watts', 'Optional. If the bike shows average watts, enter them for the most accurate number']];
+        example = `45 min, 18 ${DU()} → enter 45 and 18`;
+      } else {
+        short = 'Minutes · distance · incline % or elevation';
+        rows = [['Time', 'Total minutes'], ['Distance', `From the treadmill or your watch (${DU()})`], ['Incline', 'The treadmill incline %. Outdoors or on a watch? Tap the INCL% header and enter elevation gain (m) instead. We work out your average incline.']];
+        example = ex.cm === 'walk' ? `30 min, ${n('3', '1.9')} ${DU()} at 12% → enter 30 · ${n('3', '1.9')} · 12` : `30 min, ${n('5', '3.1')} ${DU()} → enter 30 · ${n('5', '3.1')} · 0`;
+      }
+    } else if (ex.t === 'c') {
+      short = 'Minutes · how hard it felt';
+      rows = [['Time', 'Total minutes'], ['Effort', 'Light = you could chat easily · Moderate = talking is hard · Hard = you can barely talk']];
+    } else if (ex.t === 'h') {
+      short = pair ? 'Seconds · weight of 1 dumbbell' : 'Seconds · extra weight (optional)';
+      rows = [['Time', 'Seconds held or walked'], ['Weight', pair ? 'Weight of ONE dumbbell. We count both hands.' : 'Anything you hold or wear on top of your bodyweight (optional)']];
+    } else if (ex.t === 'a') {
+      short = 'Assistance on the machine · reps';
+      rows = [['Weight', 'The assistance (counterweight) number on the machine. More assistance = easier.'], ['Reps', per ? `Reps per ${sw}` : 'Reps per set']];
+      example = `Pull-ups with ${n(20, 45)} ${u} of assistance, 8 reps → enter ${n(20, 45)} × 8`;
+    } else if (ex.t === 'bw') {
+      short = `Bodyweight auto-counted · reps${per ? ' per ' + sw : ''}`;
+      rows = [['Weight', 'Only EXTRA weight (belt, vest, dumbbell). Leave empty for bodyweight; your bodyweight is already counted.'], ['Reps', per ? `Reps per ${sw}: 10 each ${sw} → enter 10` : 'Reps per set']];
+      example = per ? `10 reps each ${sw}, no extra weight → enter 10` : `12 reps with a ${n(10, 25)} ${u} vest → enter ${n(10, 25)} × 12`;
+    } else {
+      short = `${weightWord(ex)} · reps${per ? ' per ' + sw : ''}`;
+      let wTxt;
+      if (pair) wTxt = `Weight of ONE dumbbell. Holding two ${n(15, 35)} ${u} dumbbells → enter ${n(15, 35)}.`;
+      else if (ex.e === 'Dumbbell') wTxt = 'Weight of the dumbbell you are holding.';
+      else if (['Barbell', 'EZ Bar', 'Trap Bar'].includes(ex.e)) wTxt = `Total weight: bar + all plates. ${n('20 kg bar + two 20 kg plates → 60', '45 lb bar + two 45 lb plates → 135')}.`;
+      else if (ex.e === 'Smith Machine') wTxt = "Plates loaded. Add the bar only if your gym's Smith bar is not counterbalanced.";
+      else if (ex.e === 'Machine') wTxt = 'The number on the machine. Plate-loaded with separate arms? Add both sides together.';
+      else if (ex.e === 'Cable') wTxt = 'The number on the stack. Using a rope or both handles together? Still enter the stack number once.';
+      else if (ex.e === 'Band') wTxt = 'Your best estimate of the band resistance.';
+      else wTxt = 'The weight of what you are lifting.';
+      rows = [['Weight', wTxt], ['Reps', per ? `Reps per ${sw}: 10 each ${sw} → enter 10.` : pair ? 'Reps per set. Both arms moving together = 1 rep.' : 'Reps per set.']];
+      if (pair && per) example = `Two ${n(12, 25)} ${u} dumbbells, 8 reps each ${sw} → enter ${n(12, 25)} × 8`;
+      else if (pair) example = `Two ${n(15, 35)} ${u} dumbbells, 10 reps → enter ${n(15, 35)} × 10`;
+      else if (per) example = `${n(20, 45)} ${u}, 10 reps each ${sw} → enter ${n(20, 45)} × 10`;
+      else if (['Barbell', 'EZ Bar', 'Trap Bar'].includes(ex.e)) example = `${n('20 kg bar + two 20 kg plates', '45 lb bar + two 45 lb plates')}, 8 reps → enter ${n(60, 135)} × 8`;
+    }
+    if (ex.id === '21s-bicep-curl-barbell') { example = `${n('20 kg bar + two 5 kg plates', '45 lb bar + two 10 lb plates')}, one round of 21s → enter ${n(30, 65)} × 21`; rows[1] = ['Reps', 'Always 21 per set']; }
+    if (ex.note) short = ex.note.split('.')[0];
+    // How the maths uses this exercise + your profile
+    const P = S.profile, bw = P.weight;
+    const counts = [];
+    if (ex.t === 'w' || ex.t === 'bw' || ex.t === 'a') {
+      counts.push(`Your bodyweight (${fmtW(bw)} ${u})${ex.b ? `: ${Math.round(ex.b * 100)}% of it (${fmtW(ex.b * bw)} ${u}) moves every rep` : ' sets your metabolic burn during the set'}`);
+      if (pair) counts.push('Both dumbbells (2 × the weight you enter)');
+      if (per) counts.push(`Both ${sw}s (reps × 2)`);
+      if (ex.t === 'a') counts.push('Assistance is subtracted from your bodyweight');
+      counts.push(`Range of motion ≈ ${ex.r} m per rep, rep tempo ${P.tempo}s, rest ${P.rest}s (from your settings)`);
+    } else if (isDistCardio(ex)) {
+      counts.push(ex.cm === 'row' ? 'Your pace → watts, then energy at ~20% efficiency' : ex.cm === 'bike' ? `Watts (ACSM cycling equation) or speed (Compendium METs) × your ${fmtW(bw)} ${u}` : `Your speed + incline → ACSM oxygen cost × your ${fmtW(bw)} ${u}`);
+    } else {
+      counts.push(`Activity intensity (MET) × your ${fmtW(bw)} ${u}${ex.t === 'h' && pair ? ' + both dumbbells' : ''} × time`);
+    }
+    const r0 = Calc.rmr(P);
+    counts.push(r0 ? `Your resting metabolism: ${Math.round(r0).toLocaleString()} kcal/day (age, sex, height)` : 'Add age, sex and height in Profile for a more personal number');
+    return { short, rows, example, note: ex.note || '', counts, warn: pair || per };
+  }
+  function openLogGuide(ex) {
+    const g = logGuide(ex);
+    openSheet({
+      title: 'How to log',
+      body: `
+        <div class="row" style="margin-bottom:14px">${avatar(ex, 40)}<div class="grow"><div style="font-weight:700;font-size:17px">${esc(ex.n)}</div><div class="dim" style="font-size:13px">${esc(ex.m)} · ${esc(ex.e)}</div></div></div>
+        <div class="sum-sec" style="margin-top:4px">What to enter</div>
+        <div class="math-box">${g.rows.map(([k, v]) => `<div class="guide-row"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('')}</div>
+        ${g.note ? `<div class="guide-note">${icon('info')}<span>${esc(g.note)}</span></div>` : ''}
+        ${g.example ? `<div class="sum-sec">Example</div><div class="math-box"><div class="guide-row"><span>${esc(g.example)}</span></div></div>` : ''}
+        ${g.warn ? `<div class="guide-note good">${icon('check')}<span>Don't double the weight or reps yourself. BurnSet already does.</span></div>` : ''}
+        <div class="sum-sec">How BurnSet counts it</div>
+        <div class="math-box">${g.counts.map((c) => `<div class="guide-row"><span>• ${esc(c)}</span></div>`).join('')}</div>`,
+      foot: '<button class="btn primary block" data-close>Got it</button>',
+    });
+  }
+
   function avatarUrl() { return CLOUD() && Cloud.profile && Cloud.profile.avatar_url; }
   function displayName() { return (CLOUD() && Cloud.profile && Cloud.profile.username) || S.profile.name || ''; }
   function navAvatar() {
@@ -663,6 +762,7 @@
         <div class="ex-kcal"><div class="v" id="ext-${eo.uid}">${fmtK(tot)} kcal</div><div class="l">${routine ? 'estimated' : 'burned'}</div></div>
         <button class="icon-btn" data-act="ex-menu" aria-label="Exercise options">${icon('more')}</button>
       </div>
+      <button class="log-hint" data-act="log-guide">${icon('info')}<span>${esc(logGuide(ex).short)}</span>${icon('chevR')}</button>
       <textarea class="ex-note" data-note rows="1" placeholder="Add notes here...">${esc(eo.note)}</textarea>
       <div class="sets" style="--cols:${cols}">
         <div class="sets-head"><span>SET</span><span>PREVIOUS</span>${heads.map((h) => `<span>${h}</span>`).join('')}<span>KCAL</span>${routine ? '' : `<span>${icon('check')}</span>`}</div>
@@ -1173,12 +1273,12 @@
         <div class="field" style="margin-top:16px"><label>Added load (${U()})</label><input class="input" id="lab-w" inputmode="decimal" value="${fmtW(L.w)}"></div>`;
     } else {
       const maxW = U() === 'lb' ? 660 : 300;
-      const wl = ex.t === 'w' ? `Weight (${U()})` : ex.t === 'a' ? `Assistance (${U()})` : `Added weight (${U()})`;
+      const wl = ex.t === 'w' ? (ex.lw === 2 ? `Weight of one dumbbell (${U()})` : `Weight (${U()})`) : ex.t === 'a' ? `Assistance (${U()})` : `Added weight (${U()})`;
       controls = `
         <div class="field"><label>${wl}</label>
           <div class="row"><input class="input mono" id="lab-w" inputmode="decimal" value="${fmtW(L.w)}" style="width:100px;font-weight:600;font-size:16px;text-align:center">
           <input type="range" id="lab-ws" min="0" max="${maxW}" step="${U() === 'lb' ? 5 : 2.5}" value="${toDisp(L.w)}" style="--p:${(toDisp(L.w) / maxW) * 100}%"></div></div>
-        <div style="margin-top:18px">${sliderBlock('lab-r', 'Reps', L.r, 1, 30, 1, 'reps')}</div>`;
+        <div style="margin-top:18px">${sliderBlock('lab-r', ex.sd === 2 ? `Reps per ${sideWord(ex)}` : 'Reps', L.r, 1, 30, 1, ex.sd === 2 ? `/ ${sideWord(ex)}` : 'reps')}</div>`;
     }
     const html = `
       <div class="card">
@@ -1235,13 +1335,16 @@
     let lines;
     if (strength) {
       const load = Calc.effectiveLoad(ex, set, bw);
-      const workJ = load * 9.81 * ex.r * (set.r || 0);
+      const totalReps = (set.r || 0) * (ex.sd || 1);
+      const workJ = load * 9.81 * ex.r * totalReps;
       lines = [
         ['Load moved per rep', `${fmtW(load)} ${U()}${ex.b ? ` <span class="dim">(incl. ${Math.round(ex.b * 100)}% bodyweight)</span>` : ''}`],
         ['Distance per rep', `${ex.r} m`],
         ['Work done', `${Math.round(workJ).toLocaleString()} J`],
         ['Energy (18% efficiency, +33% eccentric)', `${fmtK(b.mech)} kcal`],
-        [`Time under tension (${set.r} × ${S.profile.tempo}s)`, `${fmtK(b.active)} kcal`],
+        ...(ex.lw === 2 ? [['Dumbbells', '2 × the weight entered']] : []),
+        ...(ex.sd === 2 ? [['Sides', `${set.r} reps × 2 ${sideWord(ex)}s = ${totalReps} reps`]] : []),
+        [`Time under tension (${totalReps} × ${S.profile.tempo}s)${Calc.metScale(S.profile) !== 1 ? ' · personal metabolism' : ''}`, `${fmtK(b.active)} kcal`],
         [S.profile.includeRest ? `Rest after set (${S.profile.rest}s)` : 'Rest period (off in settings)', `${fmtK(b.rest)} kcal`],
       ];
     } else if (isDistCardio(ex)) {
@@ -1314,7 +1417,7 @@
     bind('lab-g', (e) => { L.g = +e.target.value; setP(e.target); $('#lab-g-v').textContent = L.g; updateLab(); saveSoon(); });
     bind('lab-ws', (e) => { L.w = fromDisp(+e.target.value); setP(e.target); $('#lab-w').value = e.target.value; updateLab(); saveSoon(); });
     bind('lab-w', (e) => { const v = num(e.target.value); L.w = fromDisp(v ?? 0); const s = $('#lab-ws'); if (s) { s.value = v ?? 0; setP(s); } updateLab(); saveSoon(); });
-    bind('lab-bw', (e) => { const v = num(e.target.value); if (v && v > 20) { S.profile.weight = fromDisp(v); updateLab(); updatePlanner(); saveSoon(); } });
+    bind('lab-bw', (e) => { const v = num(e.target.value); if (v && v > 20) { S.profile.weight = fromDisp(v); S.profile.weightAt = Date.now(); updateLab(); updatePlanner(); saveSoon(); } });
     const seg = $('#lab-i');
     seg && seg.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; L.i = +b.dataset.i; $$('button', seg).forEach((x) => x.classList.toggle('on', x === b)); updateLab(); saveSoon(); });
     mountPlanner();
@@ -1411,7 +1514,8 @@
           <div class="stat"><div class="v mono fire">${fmtK(totalK)}</div><div class="l">kcal total</div></div>
           <div class="stat"><div class="v mono">${best && best.v ? fmtW(best.v) : '—'}</div><div class="l">${strength ? 'Est. 1RM ' + U() : 'Best'}</div></div>
         </div>
-        ${strength ? `<div class="field" style="margin-top:16px"><label>${ex.t === 'w' ? 'Weight' : ex.t === 'a' ? 'Assistance' : 'Added weight'} (${U()})</label><input class="input mono" id="xd-w" inputmode="decimal" value="${fmtW(w)}"></div>` : ''}
+        <button class="log-hint" data-xg style="margin:14px 0 0">${icon('info')}<span>How to log: ${esc(logGuide(ex).short)}</span>${icon('chevR')}</button>
+        ${strength ? `<div class="field" style="margin-top:16px"><label>${ex.t === 'w' ? (ex.lw === 2 ? 'Weight of one dumbbell' : 'Weight') : ex.t === 'a' ? 'Assistance' : 'Added weight'} (${U()})</label><input class="input mono" id="xd-w" inputmode="decimal" value="${fmtW(w)}"></div>` : ''}
         <div class="rep-explorer" style="margin-top:14px;border-style:solid" id="xd-rx"></div>
         <div class="math-box" style="margin-top:14px;font-size:13px">
           ${strength ? `<div class="math-line"><span>Range of motion</span><b class="mono">${ex.r} m</b></div><div class="math-line"><span>Bodyweight moved</span><b class="mono">${Math.round(ex.b * 100)}%</b></div>` : ''}
@@ -1425,9 +1529,10 @@
     });
     const drawRx = () => {
       let cells;
-      if (ex.t === 'c') cells = [10, 20, 30, 45, 60].flatMap((d) => [{ l: `${d}m light`, k: kcalOf(ex, { d, i: 0 }) }, { l: `${d}m hard`, k: kcalOf(ex, { d, i: 2 }) }]);
+      if (isDistCardio(ex)) cells = [10, 15, 20, 30, 45, 60, 75, 90].map((d) => ({ l: `${d} min`, k: kcalOf(ex, { d, km: (ex.dv / 60) * d, g: ex.dg }) }));
+      else if (ex.t === 'c') cells = [10, 20, 30, 45, 60].flatMap((d) => [{ l: `${d}m light`, k: kcalOf(ex, { d, i: 0 }) }, { l: `${d}m hard`, k: kcalOf(ex, { d, i: 2 }) }]);
       else if (ex.t === 'h') cells = [15, 30, 45, 60, 90, 120, 180, 300].map((d) => ({ l: d + 's', k: kcalOf(ex, { d }) }));
-      else cells = [1, 3, 5, 8, 10, 12, 15, 20, 25, 30].map((r) => ({ l: r + ' reps', k: kcalOf(ex, { w, r }) }));
+      else cells = [1, 3, 5, 8, 10, 12, 15, 20, 25, 30].map((r) => ({ l: r + (ex.sd === 2 ? `/${sideWord(ex)}` : ' reps'), k: kcalOf(ex, { w, r }) }));
       $('#xd-rx', m.el).innerHTML = `<div class="t"><span>${icon('flame', 'fire')} Calories per set</span><span class="dim">${fmtW(S.profile.weight)} ${U()} bodyweight</span></div>
         <div class="rep-grid">${cells.map((c) => `<div><div class="r">${c.l}</div><div class="k">${fmtK(c.k)}</div><div class="r">${fmtG(c.k)}g</div></div>`).join('')}</div>`;
     };
@@ -1444,6 +1549,7 @@
       if (S.active) { addExercisesToActive([id]); if (location.hash !== '#workout') location.hash = 'workout'; toast('Added to workout'); }
       else startWorkout({ name: ex.n.replace(/\s*\(.*?\)/, '') + ' Session', items: [{ exId: id, sets: [{}, {}, {}] }] });
     };
+    $('[data-xg]', m.el).onclick = () => openLogGuide(ex);
     ex.custom && ($('[data-xe]', m.el).onclick = () => { m.close(); openCustomForm(null, S.custom.find((c) => c.id === id)); });
   }
 
@@ -1489,6 +1595,10 @@
       <div class="section"><div class="section-title">Body & calculation</div>
         <div class="card settings" style="padding:2px 16px">
           <div class="s-row"><div><div class="t">Bodyweight</div><div class="d">Drives every calorie number</div></div><div class="ctl row" style="gap:6px"><input class="input mono" id="pf-bw" inputmode="decimal" value="${fmtW(P.weight)}" style="text-align:center"><span class="dim">${U()}</span></div></div>
+          <div class="s-row"><div><div class="t">Sex</div><div class="d">Personalises your resting metabolism</div></div><div class="ctl"><div class="segmented" id="pf-sex"><button data-v="m" class="${P.sex === 'm' ? 'on' : ''}">Male</button><button data-v="f" class="${P.sex === 'f' ? 'on' : ''}">Female</button></div></div></div>
+          <div class="s-row"><div><div class="t">Age</div></div><div class="ctl row" style="gap:6px"><input class="input mono" id="pf-age" inputmode="numeric" value="${P.age ?? ''}" placeholder="—" style="text-align:center"><span class="dim">yrs</span></div></div>
+          <div class="s-row"><div><div class="t">Height</div></div><div class="ctl row" style="gap:6px"><input class="input mono" id="pf-height" inputmode="decimal" value="${P.height ? fmtNum(U() === 'lb' ? P.height / 2.54 : P.height, 0) : ''}" placeholder="—" style="text-align:center"><span class="dim">${U() === 'lb' ? 'in' : 'cm'}</span></div></div>
+          <div class="s-row"><div><div class="t">Resting metabolism</div><div class="d">Mifflin-St Jeor · used in every calorie number</div></div><div class="muted" style="text-align:right">${Calc.rmr(P) ? `${Math.round(Calc.rmr(P)).toLocaleString()} kcal/day` : 'Add sex, age & height'}</div></div>
           <div class="s-row"><div><div class="t">Weekly burn goal</div><div class="d">Fills the orange ring</div></div><div class="ctl"><select class="select" id="pf-gk">${[1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000].map((v) => `<option value="${v}" ${P.weeklyKcal === v ? 'selected' : ''}>${v.toLocaleString()} kcal</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Weekly workouts goal</div><div class="d">Fills the green ring</div></div><div class="ctl"><select class="select" id="pf-gw">${[2, 3, 4, 5, 6, 7].map((v) => `<option value="${v}" ${P.weeklyWorkouts === v ? 'selected' : ''}>${v} workouts</option>`).join('')}</select></div></div>
           <div class="s-row"><div><div class="t">Units</div></div><div class="ctl"><div class="segmented" id="pf-unit"><button data-v="kg" class="${P.unit === 'kg' ? 'on' : ''}">kg</button><button data-v="lb" class="${P.unit === 'lb' ? 'on' : ''}">lb</button></div></div></div>
@@ -1508,6 +1618,7 @@
         <div class="card">
           <p class="dim" style="margin:0 0 12px;font-size:13px">${CLOUD() ? 'Your data is saved to your account and synced across your devices. You can also export a backup file.' : 'Everything is stored privately on this device. Export a backup to move it to another phone or browser.'}</p>
           <div class="grid-2"><button class="btn" data-act="export">${icon('download')} Export</button><button class="btn" data-act="import">${icon('upload')} Import</button></div>
+          <button class="btn block" style="margin-top:10px" data-act="recalc">${icon('repeat')} Recalculate past workouts</button>
           <button class="btn danger block" style="margin-top:10px" data-act="reset">${icon('trash')} Reset all data</button>
         </div></div>
 
@@ -1540,11 +1651,14 @@
       try { await Cloud.uploadAvatar(f); toast('Profile picture updated'); render(true); }
       catch (e) { toast('Upload failed: ' + (e.message || 'try again')); }
     }));
-    $('#pf-bw').addEventListener('change', (e) => { const v = num(e.target.value); if (v && v > 20 && v < 700) { P.weight = fromDisp(v); save(); toast('Bodyweight updated'); } else { e.target.value = fmtW(P.weight); toast('Enter a valid bodyweight'); } });
+    $('#pf-bw').addEventListener('change', (e) => { const v = num(e.target.value); if (v && v > 20 && v < 700) { P.weight = fromDisp(v); P.weightAt = Date.now(); save(); render(true); toast('Bodyweight updated'); } else { e.target.value = fmtW(P.weight); toast('Enter a valid bodyweight'); } });
     const seg = (id, key, after) => $('#' + id).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; P[key] = b.dataset.v; save(); after ? after() : render(true); });
     seg('pf-unit', 'unit');
     seg('pf-mode', 'mode');
     seg('pf-dist', 'dist');
+    seg('pf-sex', 'sex');
+    $('#pf-age').addEventListener('change', (e) => { const v = num(e.target.value); if (v == null) { delete P.age; } else if (v >= 10 && v <= 100) P.age = Math.round(v); else { toast('Enter an age between 10 and 100'); return; } save(); render(true); });
+    $('#pf-height').addEventListener('change', (e) => { let v = num(e.target.value); if (v == null) { delete P.height; } else { if (U() === 'lb') v *= 2.54; if (v >= 100 && v <= 250) P.height = Math.round(v); else { toast('Enter a valid height'); return; } } save(); render(true); });
     seg('pf-theme', 'theme', () => { applyTheme(); render(true); });
     $('#pf-gk').addEventListener('change', (e) => { P.weeklyKcal = +e.target.value; save(); });
     $('#pf-gw').addEventListener('change', (e) => { P.weeklyWorkouts = +e.target.value; save(); });
@@ -1593,16 +1707,26 @@
             <div class="field"><label>Bodyweight</label><input class="input mono" id="ob-bw" inputmode="decimal" placeholder="75"></div>
             <div class="field"><label>Units</label><div class="segmented" id="ob-u"><button class="on" data-v="kg">kg</button><button data-v="lb">lb</button></div></div>
           </div>
+          <div class="grid-2">
+            <div class="field"><label>Age</label><input class="input mono" id="ob-age" inputmode="numeric" placeholder="25"></div>
+            <div class="field"><label id="ob-h-l">Height (cm)</label><input class="input mono" id="ob-h" inputmode="decimal" placeholder="175"></div>
+          </div>
+          <div class="field"><label>Sex</label><div class="segmented" id="ob-sex"><button data-v="m">Male</button><button data-v="f">Female</button></div><span class="hint">Optional. Age, height and sex personalise your resting metabolism for more accurate calories.</span></div>
         </div>`,
       foot: `<button class="btn primary lg block" data-go>Get started</button>`,
       onClose: () => { S.onboarded = true; save(); },
     });
     let unit = 'kg';
-    $('#ob-u', m.el).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; unit = b.dataset.v; $$('#ob-u button', m.el).forEach((x) => x.classList.toggle('on', x === b)); $('#ob-bw', m.el).placeholder = unit === 'kg' ? '75' : '165'; });
+    $('#ob-u', m.el).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; unit = b.dataset.v; $$('#ob-u button', m.el).forEach((x) => x.classList.toggle('on', x === b)); $('#ob-bw', m.el).placeholder = unit === 'kg' ? '75' : '165'; $('#ob-h-l', m.el).textContent = unit === 'kg' ? 'Height (cm)' : 'Height (in)'; $('#ob-h', m.el).placeholder = unit === 'kg' ? '175' : '69'; });
+    let sex = null;
+    $('#ob-sex', m.el).addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (!b) return; sex = b.dataset.v; $$('#ob-sex button', m.el).forEach((x) => x.classList.toggle('on', x === b)); });
     $('[data-go]', m.el).onclick = () => {
       const v = num($('#ob-bw', m.el).value);
       S.profile.unit = unit;
-      if (v && v > 20) S.profile.weight = unit === 'lb' ? v / LB : v;
+      if (v && v > 20) { S.profile.weight = unit === 'lb' ? v / LB : v; S.profile.weightAt = Date.now(); }
+      const age = num($('#ob-age', m.el).value); if (age && age >= 10 && age <= 100) S.profile.age = Math.round(age);
+      let ht = num($('#ob-h', m.el).value); if (ht) { if (unit === 'lb') ht *= 2.54; if (ht >= 100 && ht <= 250) S.profile.height = Math.round(ht); }
+      if (sex) S.profile.sex = sex;
       const obn = $('#ob-name', m.el); S.profile.name = obn ? obn.value.trim() : displayName();
       S.onboarded = true; save(); m.close(); render(true);
     };
@@ -1697,6 +1821,15 @@
         save(); render(true);
         break;
       }
+      case 'log-guide':
+        openLogGuide(getEx(eo.exId));
+        break;
+      case 'update-bw': {
+        const v = num(await promptDialog(`Bodyweight (${U()})`, fmtW(S.profile.weight), 'Save', U()));
+        if (v && v > 20 && v < 700) { S.profile.weight = fromDisp(v); S.profile.weightAt = Date.now(); save(); render(true); toast('Bodyweight updated'); }
+        else if (v != null) toast('Enter a valid bodyweight');
+        break;
+      }
       case 'del-set':
         deleteSetRow(a.closest('.set-swipe'));
         break;
@@ -1752,6 +1885,20 @@
         await Cloud.signOut();
         location.replace(location.pathname);
         break;
+      case 'recalc': {
+        if (!S.history.length) { toast('No workouts to recalculate yet'); break; }
+        if (!(await confirmDialog('Recalculate past workouts?', 'Updates every logged workout with the latest calorie maths and your current age, sex and height, using the bodyweight you had on each day.', 'Recalculate'))) break;
+        let before = 0, after = 0;
+        S.history.forEach((h) => {
+          const P = { ...S.profile, weight: h.bw || S.profile.weight };
+          before += h.kcal || 0; h.kcal = 0;
+          h.exercises.forEach((e) => { const ex = getEx(e.exId); e.sets.forEach((x) => { x.k = Calc.setKcal(ex, x, P); h.kcal += x.k; }); });
+          after += h.kcal;
+        });
+        save(); render(true);
+        toast(`Updated ${S.history.length} workouts: ${fmtK(before)} → ${fmtK(after)} kcal`);
+        break;
+      }
       case 'export': exportData(); break;
       case 'import': importData(); break;
       case 'reset':

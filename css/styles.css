@@ -665,3 +665,21 @@ button.list-item svg.i { color: var(--tint); }
 .set-del { opacity: 0; transition: opacity .12s; }
 .set-swipe.swiping .set-del { opacity: 1; }
 .col-toggle { font-size: 10.5px; padding: 2px 5px; text-decoration: underline dotted; text-underline-offset: 2px; }
+
+/* ============ HOW TO LOG ============ */
+.log-hint { display: flex; align-items: center; gap: 7px; width: 100%; margin: 10px 0 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--tint) 10%, transparent); color: var(--tint); font-size: 13.5px; font-weight: 500; text-align: left; }
+.log-hint span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-hint svg.i { width: 15px; height: 15px; flex: none; }
+.log-hint svg.i:last-child { opacity: .6; width: 13px; height: 13px; }
+.guide-row { display: flex; gap: 12px; padding: 11px 0; border-bottom: 0.5px solid var(--line); font-size: 15px; line-height: 1.4; }
+.guide-row:last-child { border-bottom: 0; }
+.guide-row b { flex: none; width: 66px; font-weight: 600; }
+.guide-row span { color: var(--text); }
+.guide-note { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--tint) 12%, transparent); color: var(--text); font-size: 14.5px; line-height: 1.4; }
+.guide-note svg.i { color: var(--tint); flex: none; margin-top: 1px; }
+.guide-note.good { background: color-mix(in srgb, var(--green) 13%, transparent); }
+.guide-note.good svg.i { color: var(--green); }
+.bw-nudge { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 12px; padding: 14px 16px; border-radius: 18px; background: var(--card); text-align: left; font-size: 15px; }
+.bw-nudge > svg.i { color: var(--hl); width: 24px; height: 24px; }
+.bw-nudge .dim { font-size: 13px; margin-top: 1px; color: var(--text-2); }
+.bw-nudge .tint { font-weight: 600; }
